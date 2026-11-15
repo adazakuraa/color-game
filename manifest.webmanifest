@@ -1,0 +1,13 @@
+{
+  "name": "いろあわせ — Color Combination Studio",
+  "short_name": "いろあわせ",
+  "description": "色相環から色を選び、四角形を自由に配置して配色を楽しむアプリ",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f1ec",
+  "theme_color": "#f3f1ec",
+  "lang": "ja",
+  "icons": [{ "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
