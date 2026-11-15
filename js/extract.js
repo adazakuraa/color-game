@@ -115,3 +115,39 @@ export function extractPalette(data, k = 5, seed = 7) {
   result = merged.sort((a, b) => b.ratio - a.ratio);
   return result;
 }
+
+/**
+ * スポイト用のサンプラー
+ * 画像を最大 maxSide px の作業用キャンバスに描き、指定位置の色を取得する。
+ * nx, ny は画像内の相対位置（0〜1）。radius 内の平均色を返す（ノイズ対策）。
+ */
+export function createSampler(img, maxSide = 1600) {
+  const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+  if (!w0 || !h0) throw new Error('画像のサイズを取得できませんでした。');
+  const scale = Math.min(1, maxSide / Math.max(w0, h0));
+  const w = Math.max(1, Math.round(w0 * scale)), h = Math.max(1, Math.round(h0 * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, w, h);
+  const data = ctx.getImageData(0, 0, w, h).data;
+  const toPx = (nx, ny) => ({ x: Math.min(w - 1, Math.max(0, Math.floor(nx * w))), y: Math.min(h - 1, Math.max(0, Math.floor(ny * h))) });
+  return {
+    canvas, width: w, height: h,
+    toPx,
+    /** @returns {string|null} 透明部分は null */
+    sample(nx, ny, radius = 1) {
+      const p = toPx(nx, ny);
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let y = p.y - radius; y <= p.y + radius; y++) {
+        for (let x = p.x - radius; x <= p.x + radius; x++) {
+          if (x < 0 || y < 0 || x >= w || y >= h) continue;
+          const i = (y * w + x) * 4;
+          if (data[i + 3] < 128) continue;
+          r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+        }
+      }
+      return n ? rgbToHex({ r: r / n, g: g / n, b: b / n }) : null;
+    },
+  };
+}
