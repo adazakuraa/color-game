@@ -179,7 +179,7 @@ export function createHelpPanel(root) {
         <li>選択中の四角形は<b>2本指のピンチ</b>でも拡大・縮小できます。</li>
         <li>重なっている場所で選択中の四角形を<b>もう一度タップ</b>すると、下にある四角形を順に選択できます。</li>
         <li>下のバーから<b>複製・前面・背面・削除</b>ができます。</li>
-        <li><b>色</b>を開き、色相環の円周をなぞって色を選びます。キャンバスを見ながら調整できます。</li>
+        <li><b>色</b>を開き、色相環の円周をなぞって色相を、内側の四角で彩度（左右）と明度（上下）を選びます。キャンバスを見ながら調整できます。</li>
       </ol>
     </div>
     <div class="section">
@@ -199,7 +199,7 @@ export function createHelpPanel(root) {
         <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> 元に戻す ／ <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> やり直す ／ <kbd>Esc</kbd> 選択解除</li>
       </ul>
     </div>
-    <p class="note">色相環で選ぶ色の彩度・明度は一定です（js/config.js の定数で変更できます）。画像から抽出した色はそのままの彩度・明度で使えます。</p>`;
+    <p class="note">無彩色（白・灰・黒）から色相環を回すと、彩度・明度は初期値（js/config.js の定数）に戻ります。</p>`;
   return { title: '使い方', height: 'min(64dvh, calc(100dvh - 290px))', onOpen() {}, update() {} };
 }
 

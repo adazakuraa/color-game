@@ -144,7 +144,12 @@ export function createExtractPanel(root, ctx) {
     root.querySelector('#exMinus').disabled = count <= CONFIG.EXTRACT_MIN;
     root.querySelector('#exPlus').disabled = count >= CONFIG.EXTRACT_MAX;
     const sel = selectedShape();
-    root.querySelector('#exColors').innerHTML = palette.map((c) => {
+    const box = root.querySelector('#exColors');
+    // 内容が変わらない場合は描き直さない（タップ中の要素が置き換わるのを防ぐ）
+    const sig = palette.map((c) => `${c.hex}:${c.ratio}`).join(',') + '|' + (sel ? sel.color : '');
+    if (box.dataset.sig === sig) return;
+    box.dataset.sig = sig;
+    box.innerHTML = palette.map((c) => {
       const info = describeColor(c.hex);
       return `<button class="extract-color${sel && sel.color === c.hex ? ' is-applied' : ''}" data-hex="${c.hex}" aria-label="${escapeHtml(info.name.name)} ${c.hex}">
         <i style="background:${c.hex}"></i><span>${c.hex.toUpperCase()}<br>${Math.round(c.ratio * 100)}%</span></button>`;
