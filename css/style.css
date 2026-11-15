@@ -487,8 +487,16 @@ p { margin: 0 0 8px; }
 
 /* ---------- 色パネル ---------- */
 
-.color-layout { display: grid; grid-template-columns: minmax(150px, 52%) 1fr; gap: 16px; align-items: center; }
-.color-layout > :first-child { max-width: 240px; }
+.color-layout { display: grid; grid-template-columns: 1fr; gap: 12px; justify-items: center; }
+.color-layout > .wheel { width: min(78vw, 300px, 38dvh, calc(100dvh - 390px)); min-width: 150px; }
+/* シートの実際の高さに合わせて色相環の大きさを決める（シートを広げると大きくなる） */
+@supports (width: 1cqh) {
+  .sheet-body { container-type: size; }
+  .color-layout > .wheel { width: min(78cqw, 320px, calc(100cqh - 40px)); } /* 切替ボタン分を除き、下余白は使う */
+}
+.color-info { width: 100%; display: grid; grid-template-columns: 56px 1fr; column-gap: 12px; align-items: center; }
+.color-info .color-preview { grid-row: span 3; height: 56px; margin: 0; }
+
 .target-seg { margin-bottom: 12px; }
 
 .wheel {
@@ -514,7 +522,7 @@ p { margin: 0 0 8px; }
   pointer-events: none;
   transition: width 0.12s, height 0.12s;
 }
-.wheel.is-active .wheel-knob { width: calc(var(--knob) + 8px); height: calc(var(--knob) + 8px); }
+.wheel.is-hue .wheel-knob { width: calc(var(--knob) + 8px); height: calc(var(--knob) + 8px); }
 .wheel-markers { position: absolute; inset: 0; pointer-events: none; }
 .wheel-marker {
   position: absolute; left: 0; top: 0;
@@ -522,23 +530,42 @@ p { margin: 0 0 8px; }
   border-radius: 50%;
   box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 2.5px var(--line-strong);
 }
-.wheel-center {
+.wheel-hit { position: absolute; inset: 0; border-radius: 50%; pointer-events: none; outline: none; }
+.wheel-hit:focus-visible { box-shadow: 0 0 0 3px var(--line-strong); }
+.sv-square {
+  --hue-color: #f00;
   position: absolute;
-  inset: calc(var(--ring, 26px) + 22px);
-  border-radius: 50%;
-  display: grid; place-items: center;
-  pointer-events: none;
+  border-radius: 10px;
+  overflow: visible;
+  outline: none;
+  box-shadow: 0 0 0 1px var(--line), 0 4px 14px rgba(0, 0, 0, 0.14);
+  touch-action: none;
 }
-.wheel-swatch {
-  width: 100%; height: 100%;
+.sv-square:focus-visible { box-shadow: 0 0 0 3px var(--line-strong); }
+.sv-sat, .sv-val { position: absolute; inset: 0; border-radius: 10px; pointer-events: none; }
+.sv-sat { background: linear-gradient(to right, #fff, var(--hue-color)); }
+.sv-val { background: linear-gradient(to top, #000, rgba(0, 0, 0, 0)); }
+.sv-knob {
+  position: absolute; left: 0; top: 0;
+  width: 26px; height: 26px;
   border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.12);
-  transition: background-color 0.08s;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 3px 10px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  transition: width 0.12s, height 0.12s;
+}
+.wheel.is-sv .sv-knob { width: 34px; height: 34px; }
+.color-preview {
+  display: block;
+  width: 100%; height: 34px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
 }
 
 .color-name { font-size: 22px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.25; margin: 0; }
 .color-name small { font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0.02em; margin-left: 4px; }
-.color-sys { font-size: 13px; color: var(--muted); margin: 2px 0 10px; }
+.color-sys { font-size: 13px; color: var(--muted); margin: 2px 0 6px; }
 .values { display: grid; grid-template-columns: 0.9fr 1fr 1.15fr; gap: 6px; margin-top: 14px; }
 .value-cell { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 7px 10px; min-width: 0; }
 .value-cell b { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; color: var(--muted); }
@@ -660,7 +687,48 @@ p { margin: 0 0 8px; }
 
 /* ---------- 画像抽出 ---------- */
 
-.extract-preview { width: 100%; max-height: 220px; object-fit: contain; border-radius: 12px; background: var(--surface-3); display: block; }
+.eyedrop {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  cursor: crosshair;
+}
+.extract-preview { display: block; max-width: 100%; max-height: 260px; width: auto; height: auto; border-radius: 12px; -webkit-user-drag: none; }
+.eyedrop-cursor {
+  position: absolute; left: 0; top: 0;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.loupe {
+  position: absolute; left: 0; top: 0;
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  border: 5px solid transparent;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9), 0 8px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  z-index: 3;
+}
+.loupe canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+.loupe span {
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+  font: 600 10px/1 var(--mono);
+  padding: 3px 5px; border-radius: 5px;
+  background: rgba(0, 0, 0, 0.6); color: #fff;
+}
+.pick-card { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line); }
+.pick-swatch { width: 52px; height: 52px; border-radius: 12px; flex: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1); }
+.pick-card b { display: block; font-size: 15px; }
+.pick-card .mono { display: block; font-size: 12px; }
 .extract-colors { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
 .extract-color {
   border: 1px solid var(--line);
@@ -770,7 +838,6 @@ kbd { font-family: var(--mono); font-size: 11.5px; padding: 1px 6px; border: 1px
   .top-actions .icon-btn { width: 36px; height: 40px; }
   .logo { display: none; }
   .chip-btn span { display: none; }
-  .color-layout { grid-template-columns: 140px 1fr; gap: 12px; }
   .value-cell span { font-size: 11.5px; }
   .color-name { font-size: 19px; }
 }

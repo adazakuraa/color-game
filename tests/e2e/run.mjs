@@ -48,6 +48,7 @@ async function check(id, name, fn) {
     console.log(`  ✔ [${id}] ${name}`);
   } catch (e) {
     results.push({ device: currentDevice, id, name, ok: false, err: e.message.split('\n')[0] });
+    if (process.env.DEBUG) console.log(e.stack);
     console.log(`  ✘ [${id}] ${name}\n      ${e.message.split('\n')[0]}`);
   }
 }
@@ -108,7 +109,7 @@ async function tapEl(page, selector) {
 }
 async function wheelPoint(page, hue) {
   const b = await page.locator('#hueWheel').boundingBox();
-  const size = b.width, ring = Math.max(22, size * 0.13), r = size / 2 - ring / 2 - 2;
+  const size = b.width, ring = Math.max(18, size * 0.11), r = size / 2 - ring / 2 - 2;
   const a = ((hue - 90) * Math.PI) / 180;
   return { x: b.x + size / 2 + Math.cos(a) * r, y: b.y + size / 2 + Math.sin(a) * r };
 }
@@ -282,6 +283,43 @@ async function mobileSuite(browser, deviceName) {
     const knob = await page.locator('.wheel-knob').boundingBox();
     const kp = await wheelPoint(page, 320);
     assert(near(center(knob).x, kp.x, 4) && near(center(knob).y, kp.y, 4), 'インジケーターが選択位置に表示');
+  });
+
+  await check('1b', '色相環内の四角で彩度・明度を調整できる（タップ・ドラッグ）', async () => {
+    const id = await selectedId(page);
+    const hsvOf = (hex) => {
+      const n = parseInt(hex.slice(1), 16);
+      const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      return { h: hueOf(hex), s: max ? (max - min) / max : 0, v: max };
+    };
+    const sq = await page.locator('.sv-square').boundingBox();
+    assert(sq.width >= 90, `四角が十分な大きさ ${sq.width}`);
+    // タップ：左から25%（彩度25%）、上から20%（明度80%）
+    await page.touchscreen.tap(sq.x + sq.width * 0.25, sq.y + sq.height * 0.2); await tick(page);
+    let c = hsvOf((await work(page)).shapes.find((x) => x.id === id).color);
+    assert(near(c.s, 0.25, 0.03) && near(c.v, 0.8, 0.03), `tap s=${c.s} v=${c.v}`);
+    assert(hueDist(c.h, 320) <= 4, `色相は維持 ${c.h}`);
+    // ドラッグ：右上（彩度100%・明度100%）へ
+    await touchDrag(cdp, { x: sq.x + sq.width * 0.25, y: sq.y + sq.height * 0.2 }, { x: sq.x + sq.width * 0.9, y: sq.y + sq.height * 0.1 });
+    await tick(page);
+    c = hsvOf((await work(page)).shapes.find((x) => x.id === id).color);
+    assert(near(c.s, 0.9, 0.03) && near(c.v, 0.9, 0.03), `drag s=${c.s} v=${c.v}`);
+    const k = center(await page.locator('.sv-knob').boundingBox());
+    assert(near(k.x, sq.x + sq.width * 0.9, 4) && near(k.y, sq.y + sq.height * 0.1, 4), 'つまみが指の位置');
+    // 色相を変えても彩度・明度は保たれる
+    const p = await wheelPoint(page, 200);
+    await page.touchscreen.tap(p.x, p.y); await tick(page);
+    c = hsvOf((await work(page)).shapes.find((x) => x.id === id).color);
+    assert(hueDist(c.h, 200) <= 3 && near(c.s, 0.9, 0.03) && near(c.v, 0.9, 0.03), `hue change keeps s/v ${JSON.stringify(c)}`);
+    // 元に戻すで直前の色に戻り、つまみも追従
+    await page.click('#undoBtn'); await tick(page, 200);
+    c = hsvOf((await work(page)).shapes.find((x) => x.id === id).color);
+    assert(hueDist(c.h, 320) <= 4 && near(c.s, 0.9, 0.03), `undo ${JSON.stringify(c)}`);
+    const k2 = center(await page.locator('.sv-knob').boundingBox());
+    assert(near(k2.x, sq.x + sq.width * c.s, 5) && near(k2.y, sq.y + sq.height * (1 - c.v), 5), 'undo後のつまみ位置');
+    assert(await page.evaluate(() => window.scrollY === 0 && document.querySelector('#sheetBody').scrollTop === 0), 'スクロールしない');
+    await page.screenshot({ path: `${OUT}/${slug}-02b-sv.png` });
   });
 
   await check(2, '選択した色が正しい四角形にのみ反映される／パネル表示中もキャンバスを維持', async () => {
@@ -492,6 +530,7 @@ async function mobileSuite(browser, deviceName) {
     // 選択中の四角形に適用
     const sel = w.shapes[0].id;
     await selectShape(page, sel);
+    await tick(page, 150); // 選択の反映（ボタンの再描画）を待つ
     const hex = ex2[ex2.length - 1];
     await tapEl(page, `.extract-color[data-hex="${hex}"]`);
     assert((await work(page)).shapes.find((s) => s.id === sel).color === hex, 'applied');
@@ -503,6 +542,58 @@ async function mobileSuite(browser, deviceName) {
     await page.screenshot({ path: `${OUT}/${slug}-06-extract.png` });
     // 外部への送信がない
     assert(external.length === 0, `external requests: ${external}`);
+  });
+
+  await check('14b', 'スポイトで画像の好きな位置の色を取り、四角形に適用・追加できる', async () => {
+    await page.evaluate(() => window.__iroawase.openPanel('extract', {}));
+    // 左半分 #d03030・右半分 #2050c0 のテスト画像をブラウザ内で生成
+    const b64 = await page.evaluate(() => {
+      const c = document.createElement('canvas'); c.width = 400; c.height = 200;
+      const x = c.getContext('2d');
+      x.fillStyle = '#d03030'; x.fillRect(0, 0, 200, 200);
+      x.fillStyle = '#2050c0'; x.fillRect(200, 0, 200, 200);
+      return c.toDataURL('image/png').split(',')[1];
+    });
+    await page.setInputFiles('#fileInput', { name: 'halves.png', mimeType: 'image/png', buffer: Buffer.from(b64, 'base64') });
+    await page.waitForFunction(() => document.querySelector('#exImg').naturalWidth === 400);
+    await tick(page, 300);
+    await page.locator('#exEye').scrollIntoViewIfNeeded();
+    const r = await page.locator('#exImg').boundingBox();
+    assert(near(r.width / r.height, 2, 0.05), `画像の縦横比 ${r.width}x${r.height}`);
+    // タップ（左側）
+    await page.touchscreen.tap(r.x + r.width * 0.25, r.y + r.height * 0.5); await tick(page);
+    assert((await page.locator('#exPickHex').textContent()).startsWith('#D03030'), `tap ${await page.locator('#exPickHex').textContent()}`);
+    assert(await page.locator('#exLoupe').isHidden(), '指を離すとルーペは消える');
+    // なぞって右側へ（途中でルーペが表示される）
+    const from = { x: r.x + r.width * 0.25, y: r.y + r.height * 0.5 }, to = { x: r.x + r.width * 0.8, y: r.y + r.height * 0.6 };
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...from, id: 1 }] });
+    for (let i = 1; i <= 8; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from.x + (to.x - from.x) * i / 8, y: from.y + (to.y - from.y) * i / 8, id: 1 }] });
+    await tick(page, 50);
+    assert(await page.locator('#exLoupe').isVisible(), 'なぞっている間はルーペを表示');
+    assert((await page.locator('#exLoupe span').textContent()) === '#2050C0', 'ルーペの色表示');
+    await page.screenshot({ path: `${OUT}/${slug}-06b-eyedropper.png` });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await tick(page);
+    assert((await page.locator('#exPickHex').textContent()).startsWith('#2050C0'), 'drag result');
+    assert(await page.evaluate(() => window.scrollY === 0 && document.querySelector('#sheetBody').scrollTop >= 0), 'ページはスクロールしない');
+    // 選択中の四角形に適用
+    const sel = (await work(page)).shapes[0].id;
+    await selectShape(page, sel);
+    await tick(page, 150);
+    await tapEl(page, '#exPickApply');
+    assert((await work(page)).shapes.find((x) => x.id === sel).color === '#2050c0', 'apply');
+    // 四角形として追加
+    const n = (await work(page)).shapes.length;
+    await tapEl(page, '#exPickAdd');
+    const w2 = await work(page);
+    assert(w2.shapes.length === n + 1 && w2.shapes.at(-1).color === '#2050c0', 'add');
+    // 取った色の履歴から選び直せる
+    await tapEl(page, '#exPicks [data-hex="#d03030"]');
+    assert((await page.locator('#exPickHex').textContent()).startsWith('#D03030'), 'history');
+    // 色パネルのパレットにも表示される
+    await page.evaluate(() => window.__iroawase.openPanel('color'));
+    await tick(page, 150);
+    assert(await page.locator('#cPalette [data-hex="#d03030"]').count() === 1, 'color panel palette');
   });
 
   await check(15, 'ライト・ダークモードを切り替えられる（設定を保存）', async () => {

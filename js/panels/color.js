@@ -1,7 +1,8 @@
 /** 色選択パネル（色相環＋色の情報） */
 import { HueWheel } from '../wheel.js';
 import { state, selectedShape, setShapeColor, setBackground, checkpoint, select } from '../store.js';
-import { wheelColor, describeColor, formatRatio, isAchromatic } from '../color.js';
+import { describeColor, formatRatio, isAchromatic, hsvToHex } from '../color.js';
+import { CONFIG } from '../config.js';
 import { escapeHtml, toast } from '../ui.js';
 
 export function createColorPanel(root, ctx) {
@@ -13,6 +14,7 @@ export function createColorPanel(root, ctx) {
     <div class="color-layout">
       <div id="hueWheel"></div>
       <div class="color-info">
+        <span class="color-preview" id="cPreview" aria-hidden="true"></span>
         <p class="color-name" id="cName"></p>
         <p class="color-sys" id="cSys"></p>
         <div class="color-tags" id="cQuick"></div>
@@ -54,10 +56,16 @@ export function createColorPanel(root, ctx) {
   }
 
   let gestureStarted = false;
+  let gestureMode = null;
   const wheel = new HueWheel(root.querySelector('#hueWheel'), {
-    onStart: () => { gestureStarted = false; },
-    onInput: (h) => applyHue(h),
-    onCommit: () => { gestureStarted = false; },
+    onStart: (mode) => {
+      gestureStarted = false;
+      gestureMode = mode;
+      // 無彩色（白・灰・黒）の状態で色相を回したときは、色が見えるよう彩度・明度を初期値に戻す
+      if (mode === 'hue' && (wheel.sat < 0.05 || wheel.val < 0.08)) wheel.setHSV(null, CONFIG.WHEEL_SATURATION, Math.max(wheel.val, CONFIG.WHEEL_VALUE));
+    },
+    onInput: (h, sat, val) => applyHSV(h, sat, val),
+    onCommit: () => { gestureStarted = false; gestureMode = null; },
   });
 
   function ensureTarget() {
@@ -69,10 +77,10 @@ export function createColorPanel(root, ctx) {
     return false;
   }
 
-  function applyHue(h) {
+  function applyHSV(h, sat, val) {
     if (!ensureTarget()) return;
     if (!gestureStarted) { checkpoint(); gestureStarted = true; }
-    const hex = wheelColor(h);
+    const hex = hsvToHex(h, sat, val);
     if (target === 'background') setBackground(hex);
     else setShapeColor(state.selectedId, hex);
   }
@@ -92,13 +100,17 @@ export function createColorPanel(root, ctx) {
   }
 
   let lastSyncKey = '';
-  /** 選択対象が変わったら色相環のつまみを対象の色相に合わせる */
+  /** 選択対象が変わったら、色相環と四角のつまみを対象の色に合わせる */
   function syncWheel(force = false) {
     const hex = currentHex();
-    const key = `${target}:${target === 'shape' ? state.selectedId : 'bg'}`;
+    const key = `${target}:${target === 'shape' ? state.selectedId : 'bg'}:${hex}`;
+    if (gestureMode) return; // 操作中は自分の入力を優先
     if (!force && key === lastSyncKey) return;
     lastSyncKey = key;
-    if (hex && !isAchromatic(hex)) wheel.setHue(describeColor(hex).hsv.h);
+    if (!hex) return;
+    const { h, s, v } = describeColor(hex).hsv;
+    // 無彩色は色相が定まらないので、色相は現在の位置のまま
+    wheel.setHSV(s < 0.01 || v < 0.01 ? null : h, s, v);
   }
 
   function renderPalette() {
@@ -129,7 +141,7 @@ export function createColorPanel(root, ctx) {
     renderPalette();
     const nameEl = root.querySelector('#cName');
     if (!hex) {
-      wheel.setPreview('transparent');
+      root.querySelector('#cPreview').style.background = 'transparent';
       nameEl.textContent = '未選択';
       root.querySelector('#cSys').textContent = '四角形をタップして選択してください';
       ['#cHex', '#cRgb', '#cHsv'].forEach((s) => { root.querySelector(s).textContent = '—'; });
@@ -140,7 +152,7 @@ export function createColorPanel(root, ctx) {
       return;
     }
     const info = describeColor(hex);
-    wheel.setPreview(hex);
+    root.querySelector('#cPreview').style.background = hex;
     nameEl.innerHTML = `${escapeHtml(info.name.name)}<small>${info.name.exact ? '' : '≈ 近似'}</small>`;
     root.querySelector('#cSys').textContent = `系統色名：${info.systematic}`;
     root.querySelector('#cHex').textContent = info.hex.toUpperCase();
@@ -164,7 +176,7 @@ export function createColorPanel(root, ctx) {
 
   return {
     title: '色を選ぶ',
-    height: 'min(50dvh, calc(100dvh - 300px))',
+    height: 'min(58dvh, calc(100dvh - 250px))',
     onOpen(opts = {}) {
       if (opts.target) setTarget(opts.target);
       else if (target === 'shape' && !selectedShape() && state.work.shapes.length) select(state.work.shapes[state.work.shapes.length - 1].id);
